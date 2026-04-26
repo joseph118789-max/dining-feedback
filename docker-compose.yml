@@ -1,0 +1,79 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dining-backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      # Supabase Auth (self-hosted)
+      SUPABASE_URL: ${SUPABASE_URL:-http://localhost:8000}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:3010}
+      # Legacy Google OAuth (deprecated - use Supabase auth)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:3010/api/auth/callback}
+      # Session
+      SESSION_SECRET: ${SESSION_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8081}
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "3010:3000"
+    networks:
+      - dining-net
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_URL: https://feedback.seekn.site
+        VITE_API_BASE_URL: https://feedback.seekn.site
+        VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+    container_name: dining-frontend
+    environment:
+      VITE_API_BASE_URL: https://feedback.seekn.site
+      VITE_SUPABASE_URL: https://feedback.seekn.site
+      VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      NODE_ENV: production
+    ports:
+      - "8081:80"
+    networks:
+      - dining-net
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: dining-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dining_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dining_password}
+      POSTGRES_DB: ${POSTGRES_DB:-dining_feedback}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - dining-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dining_user} -d ${POSTGRES_DB:-dining_feedback}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+networks:
+  dining-net:
+    driver: bridge
+
+volumes:
+  pgdata:
