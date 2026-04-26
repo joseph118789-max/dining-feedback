@@ -1,132 +1,230 @@
-# Dining Feedback System — Phase 4: Docker Setup
+# Dining Feedback System
 
-## Overview
+Self-hosted dining feedback platform with Supabase Auth (Google OAuth) and Docker deployment.
 
-Docker Compose setup for the Dining Feedback System with three services:
-- **PostgreSQL 16** (database)
-- **Node.js/Express** (backend API)
-- **React/Vite + Nginx** (frontend SPA)
+## Features
 
----
+- **Guest Feedback**: Submit ratings without login
+- **Google OAuth Login**: Authenticated feedback with user tracking
+- **Admin Dashboard**: View all feedback, stats, filter by date/rating
+- **Supabase Auth**: Self-hosted authentication (Google + Facebook OAuth ready)
+- **Docker Deploy**: Full containerized setup
+
+## Architecture
+
+```
+browser → Cloudflare → nginx → backend (Express :3010)
+                          → frontend (React :80)
+                          → Supabase Kong (:8000) → GoTrue (:9999)
+                                                       → Postgres (:5432)
+```
 
 ## Prerequisites
 
-- Docker Engine ≥ 20.10
-- Docker Compose ≥ 2.20 (or the older `docker-compose` v1)
-
----
+- Docker & Docker Compose
+- Domain pointed to your server via Cloudflare DNS
+- Supabase (self-hosted) running on the same Docker network
 
 ## Quick Start
 
-### 1. Configure Environment Variables
-
-Copy the example file and fill in your values:
+### 1. Clone and Configure
 
 ```bash
+git clone https://github.com/joseph118789-max/dining-feedback.git
+cd dining-feedback
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` with your values:
 
 ```env
-# PostgreSQL
+# Database
+DATABASE_URL=postgresql://dining_user:dining_password@dining-db:5432/dining_feedback
 POSTGRES_USER=dining_user
-POSTGRES_PASSWORD=your_secure_password
+POSTGRES_PASSWORD=dining_password
 POSTGRES_DB=dining_feedback
 
-# Backend
-DATABASE_URL=postgresql://dining_user:your_secure_password@db:5432/dining_feedback
-GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
-JWT_SECRET=your_super_secret_jwt_key_at_least_32_chars
+# Supabase (self-hosted)
+SUPABASE_URL=https://feedback.yourdomain.com
+SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_KEY=your_service_key
+SUPABASE_JWT_SECRET=your_jwt_secret
+
+# App URLs
+BACKEND_URL=https://feedback.yourdomain.com
+FRONTEND_URL=https://feedback.yourdomain.com
+
+# Session
+SESSION_SECRET=your_random_32_char_secret
 ```
 
-> **Note:** `DATABASE_URL` should always point to the `db` service hostname (`db:5432`), not `localhost`, because Docker Compose networking handles DNS internally.
-
-### 2. Bring Up the Stack
+### 2. Start Containers
 
 ```bash
 docker compose up -d --build
 ```
 
-### 3. Verify Services
+### 3. Initialize Database
 
 ```bash
-docker compose ps
+# The backend docker-entrypoint.sh runs prisma db push automatically
+# Or manually:
+docker exec dining-backend npx prisma db push
 ```
 
-Expected:
-| Service   | Status |
-|-----------|--------|
-| dining-db | Up (healthy) |
-| dining-backend | Up |
-| dining-frontend | Up |
+### 4. Nginx Config
 
-### 4. Access the App
+```nginx
+# /etc/nginx/sites-available/feedback
 
-- Frontend: http://localhost:8080
-- Backend API: http://localhost:3000
+server {
+    listen 80;
+    server_name feedback.yourdomain.com;
 
-### 5. Database Migrations
+    location / {
+        proxy_pass http://localhost:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
 
-The backend runs Prisma. After the stack is up, apply migrations:
+    location /api/ {
+        proxy_pass http://localhost:3010;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /auth/supabase/ {
+        proxy_pass http://localhost:3010/api/auth/supabase/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /auth/v1/ {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
 
 ```bash
-docker compose exec backend npx prisma migrate deploy
+sudo ln -s /etc/nginx/sites-available/feedback /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
-Or for local development reset:
+### 5. Cloudflare DNS
+
+Add DNS record:
+- Type: `CNAME`
+- Name: `feedback`
+- Target: `yourserver.yourdomain.com`
+- Proxy: `DNS only` (or `Proxied` if using Cloudflare SSL)
+
+### 6. SSL (Let's Encrypt)
 
 ```bash
-docker compose exec backend npx prisma db push
+sudo certbot --nginx -d feedback.yourdomain.com
 ```
 
-### 6. Stop the Stack
+## Rebuild Frontend
+
+If you make frontend changes, rebuild with cache-busting:
 
 ```bash
-docker compose down        # keep volumes
-docker compose down -v    # also remove PostgreSQL data
+./rebuild-frontend.sh
 ```
 
----
+Or manually:
+
+```bash
+cd frontend
+docker compose build frontend
+docker compose up -d frontend
+```
+
+## Common Tasks
+
+### Check Container Logs
+
+```bash
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f db
+```
+
+### Access Database
+
+```bash
+docker exec -it dining-db psql -U dining_user -d dining_feedback
+```
+
+### Restart Services
+
+```bash
+docker compose restart backend
+docker compose restart frontend
+```
+
+### View Prisma Studio
+
+```bash
+docker exec -it dining-backend npx prisma studio
+```
+
+## Supabase Auth Setup
+
+If using a separate Supabase deployment:
+
+1. Go to Supabase Dashboard → Authentication → Providers
+2. Enable Google provider with your OAuth credentials
+3. Add redirect URI: `https://feedback.yourdomain.com/auth/v1/callback`
+4. Update `.env` with Supabase URL and keys
+
+## Troubleshooting
+
+### Login Loop
+
+Check that nginx routes `/auth/v1/` to Kong (port 8000) and `/auth/supabase/` to backend (port 3010).
+
+### Token Exchange Fails
+
+Verify GoTrue is running and `SUPABASE_JWT_SECRET` matches between Supabase and this app.
+
+### Database Connection Error
+
+Ensure `dining-db` is healthy and `DATABASE_URL` is correct.
+
+### CORS Errors
+
+Backend `BACKEND_URL` and `FRONTEND_URL` must match the public HTTPS URL.
 
 ## Project Structure
 
 ```
-phase4/
+dining-feedback/
+├── backend/           # Express + Prisma API
+│   ├── src/
+│   │   ├── routes/    # auth, feedback, admin endpoints
+│   │   ├── middleware/ # error handling
+│   │   └── lib/       # Supabase client
+│   ├── prisma/        # DB schema
+│   └── sql/           # init.sql
+├── frontend/          # React + Vite
+│   ├── src/
+│   │   ├── components/ # FeedbackForm, GuestFeedbackForm, auth
+│   │   └── pages/     # AdminDashboard
+│   └── nginx.conf
 ├── docker-compose.yml
-├── README.md
-├── backend/
-│   └── Dockerfile          # Multi-stage Node.js build
-└── frontend/
-    ├── Dockerfile          # React build + Nginx serve
-    └── nginx.conf          # Nginx config for React SPA
+└── .env
 ```
 
----
+## API Endpoints
 
-## Key Design Decisions
-
-| Decision | Reason |
-|----------|--------|
-| `postgres:16-alpine` | Smaller image, PostgreSQL 16 feature set |
-| `healthcheck` on db | Backend depends on DB being truly ready |
-| `backend-node-modules` named volume | Preserves `node_modules` between rebuilds |
-| `VITE_API_BASE_URL` env var | Frontend knows where the backend is at runtime |
-| Multi-stage builds | Keeps final images lean (no dev deps, no build tools) |
-| `NODE_ENV=production` | Disables dev-only middleware in Express |
-
----
-
-## Troubleshooting
-
-**Frontend 502 / Nginx errors:**
-Ensure `npm run build` succeeded inside the frontend container. Check logs:
-```bash
-docker compose logs frontend
-```
-
-**Backend can't connect to DB:**
-Wait for `db` to become healthy. The backend will refuse to start until then. If issues persist, verify `DATABASE_URL` uses `db` as hostname.
-
-**Prisma migrations fail:**
-Ensure `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` match between your `.env` and the values used when migrations were first run. Mismatches can lock you out of existing data.
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/feedback` | Required | Submit feedback |
+| POST | `/api/feedback/guest` | None | Guest feedback |
+| GET | `/api/admin/reviews` | Admin | List all feedback |
+| GET | `/api/admin/stats` | Admin | Dashboard stats |
+| GET | `/api/auth/supabase/login/google` | None | Initiate Google OAuth |
