@@ -187,4 +187,46 @@ router.get('/stats', requireAdmin, async (req, res, next) => {
   }
 });
 
+/**
+ * GET /api/admin/qr/:feedbackId
+ * Generate a QR code (PNG) for a given feedback entry.
+ * The QR encodes a deep link to the feedback form pre-filled with that entry's rating.
+ *
+ * Query params:
+ * - size: number (default: 300, range 100-600)
+ */
+router.get('/qr/:feedbackId', requireAdmin, async (req, res, next) => {
+  try {
+    const QRCode = await import('qrcode');
+    const feedback = await prisma.feedback.findUnique({
+      where: { id: req.params.feedbackId },
+    });
+
+    if (!feedback) {
+      return res.status(404).json({ error: 'Feedback not found' });
+    }
+
+    const size = Math.min(600, Math.max(100, parseInt(req.query.size, 10) || 300));
+    const baseUrl = process.env.FRONTEND_URL || 'https://feedback.seekn.site';
+    // Encode rating in URL so staff can show the rating value in the QR landing page
+    const deepLink = `${baseUrl}/feedback/${feedback.id}?rating=${feedback.rating}`;
+
+    const pngBuffer = await QRCode.default.toBuffer(deepLink, {
+      type: 'png',
+      width: size,
+      margin: 2,
+      color: {
+        dark: '#1e40af',   // blue-800
+        light: '#ffffff',
+      },
+    });
+
+    res.set('Content-Type', 'image/png');
+    res.set('Content-Disposition', `inline; filename="feedback-qr-${feedback.id.slice(0, 8)}.png"`);
+    res.send(pngBuffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
