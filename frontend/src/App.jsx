@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import './lib/i18n';
+import { useTranslation } from 'react-i18next';
 import SocialLogin from './components/auth/SocialLogin';
 import FeedbackForm from './components/FeedbackForm';
 import GuestFeedbackForm from './components/GuestFeedbackForm';
@@ -8,9 +10,17 @@ import AdminDashboard from './pages/AdminDashboard';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
 
 export default function App() {
+  const { t, i18n } = useTranslation();
   const { user, session, loading, signOut } = useAuth();
   const [authMessage, setAuthMessage] = useState(null);
   const [guestMode, setGuestMode] = useState(false);
+
+  // Language switcher
+  const languages = [
+    { code: 'en', label: 'EN' },
+    { code: 'zh', label: '中文' },
+    { code: 'my', label: 'MY' },
+  ];
 
   // Handle OAuth callback redirect (when redirected back with tokens in URL)
   useEffect(() => {
@@ -21,7 +31,7 @@ export default function App() {
     const success = params.get('auth');
 
     if (success === 'success') {
-      setAuthMessage({ type: 'success', text: 'Signed in successfully!' });
+      setAuthMessage({ type: 'success', text: t('successMsg') });
       params.delete('auth');
       const cleanUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}`;
       window.history.replaceState({}, '', cleanUrl);
@@ -42,9 +52,8 @@ export default function App() {
           console.error('Failed to set session:', error);
           setAuthMessage({ type: 'error', text: 'Session setup failed' });
         } else {
-          setAuthMessage({ type: 'success', text: 'Signed in successfully!' });
+          setAuthMessage({ type: 'success', text: t('successMsg') });
         }
-        // Clean up URL
         params.delete('access_token');
         params.delete('refresh_token');
         params.delete('email');
@@ -67,7 +76,7 @@ export default function App() {
       <div className="min-h-screen bg-dining-50 flex items-center justify-center p-4">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-dining-200 border-t-dining-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-dining-600">Loading...</p>
+          <p className="text-dining-600">{t('loading')}</p>
         </div>
       </div>
     );
@@ -86,6 +95,29 @@ export default function App() {
   return (
     <div className="min-h-screen bg-dining-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
+        {/* Language switcher */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '12px' }}>
+          {languages.map(({ code, label }) => (
+            <button
+              key={code}
+              onClick={() => i18n.changeLanguage(code)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '6px',
+                border: '1px solid',
+                borderColor: i18n.language === code ? '#2563eb' : '#d1d5db',
+                background: i18n.language === code ? '#2563eb' : 'white',
+                color: i18n.language === code ? 'white' : '#6b7280',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: '600',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-dining-500 rounded-2xl mb-4 shadow-lg">
@@ -103,10 +135,8 @@ export default function App() {
               />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-dining-900">We Value Your Feedback</h1>
-          <p className="text-dining-600 mt-2 text-sm">
-            Let us know about your dining experience
-          </p>
+          <h1 className="text-2xl font-bold text-dining-900">{t('welcome')}</h1>
+          <p className="text-dining-600 mt-2 text-sm">{t('subtitle')}</p>
         </div>
 
         {/* Auth message (from OAuth callback) */}
@@ -122,8 +152,8 @@ export default function App() {
             {guestMode ? (
               <>
                 <div className="text-center mb-6">
-                  <h2 className="text-xl font-semibold text-dining-900">Guest Feedback</h2>
-                  <p className="text-dining-500 mt-1 text-sm">No login required — phone number needed</p>
+                  <h2 className="text-xl font-semibold text-dining-900">{t('guestMode')}</h2>
+                  <p className="text-dining-500 mt-1 text-sm">{t('guestSubtitle')}</p>
                 </div>
                 <GuestFeedbackForm />
                 <button
@@ -131,16 +161,14 @@ export default function App() {
                   onClick={() => setGuestMode(false)}
                   className="w-full mt-3 text-center text-xs text-dining-400 hover:text-dining-600 transition-colors"
                 >
-                  ← Back to sign in
+                  {t('backToSignIn')}
                 </button>
               </>
             ) : (
               <>
                 <div className="text-center mb-6">
-                  <h2 className="text-xl font-semibold text-dining-900">Welcome!</h2>
-                  <p className="text-dining-500 mt-1 text-sm">
-                    Sign in with your preferred account
-                  </p>
+                  <h2 className="text-xl font-semibold text-dining-900">{t('signIn')}</h2>
+                  <p className="text-dining-500 mt-1 text-sm">{t('signInSubtitle')}</p>
                 </div>
 
                 <SocialLogin
@@ -153,7 +181,7 @@ export default function App() {
                   onClick={() => setGuestMode(true)}
                   className="w-full mt-3 text-center text-xs text-dining-400 hover:text-dining-600 transition-colors"
                 >
-                  Or continue as guest — phone number required
+                  {t('orGuest')}
                 </button>
 
                 <p className="text-center text-dining-400 text-xs mt-4">
@@ -187,7 +215,7 @@ export default function App() {
                 onClick={signOut}
                 className="text-xs text-dining-400 hover:text-dining-600 transition-colors"
               >
-                Sign out
+                {t('signOut')}
               </button>
             </div>
 
@@ -196,7 +224,7 @@ export default function App() {
         )}
 
         <p className="text-center text-dining-300 text-xs mt-6">
-          Powered by FineDine · Your feedback helps us improve
+          {t('poweredBy')}
         </p>
       </div>
     </div>
