@@ -188,6 +188,97 @@ router.get('/stats', requireAdmin, async (req, res, next) => {
 });
 
 /**
+ * GET /api/admin/analytics
+ * Rich analytics: rating distribution, daily time-series, guest vs auth ratio,
+ * peak hours, comment length stats.
+ *
+ * Query params:
+ * - days: number (default 30, max 90)
+ */
+router.get('/analytics', requireAdmin, async (req, res, next) => {
+  try {
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 30));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    // Rating distribution (all time)
+    const ratingDist = await prisma.feedback.groupBy({
+      by: ['rating'],
+      _count: { rating: true },
+    });
+
+    // Daily feedback count + avg rating for the period
+    const dailyRows = await prisma.$queryRaw`
+      SELECT DATE(created_at) as date,
+             COUNT(*)::int as count,
+             ROUND(AVG(rating)::numeric, 2)::float as avg_rating
+      FROM feedbacks
+      WHERE created_at >= ${since}
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `;
+
+    // Guest vs authenticated
+    const allFeedback = await prisma.feedback.findMany({
+      select: { customerEmail: true },
+    });
+    const guestCount = allFeedback.filter(f => f.customerEmail.startsWith('guest:')).length;
+    const authCount = allFeedback.length - guestCount;
+
+    // Comment stats (non-null comments)
+    const commentRows = await prisma.feedback.findMany({
+      where: { comments: { not: null } },
+      select: { comments: true },
+    });
+    const commentLengths = commentRows.map(f => (f.comments || '').length);
+    const avgCommentLen = commentLengths.length
+      ? Math.round(commentLengths.reduce((a, b) => a + b, 0) / commentLengths.length)
+      : 0;
+
+    // Build distribution map {1:0, 2:0, ..., 5:0}
+    const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    ratingDist.forEach(({ rating, _count }) => { distribution[rating] = _count; });
+
+    // Peak hours (0-23)
+    const hourRows = await prisma.$queryRaw`
+      SELECT EXTRACT(HOUR FROM created_at)::int as hour,
+             COUNT(*)::int as count
+      FROM feedbacks
+      WHERE created_at >= ${since}
+      GROUP BY EXTRACT(HOUR FROM created_at)
+      ORDER BY hour ASC
+    `;
+    const hourlyDist = Array.from({ length: 24 }, (_, i) => {
+      const row = hourRows.find(h => h.hour === i);
+      return { hour: i, count: row ? row.count : 0 };
+    });
+
+    const totalFeedbacks = await prisma.feedback.count();
+    const totalRecent = dailyRows.reduce((sum, d) => sum + d.count, 0);
+    const overallAvg = await prisma.feedback.aggregate({ _avg: { rating: true } });
+
+    res.json({
+      period: { days, since: since.toISOString() },
+      overall: {
+        total: totalFeedbacks,
+        avgRating: parseFloat((overallAvg._avg.rating || 0).toFixed(2)),
+        last30Days: totalRecent,
+      },
+      distribution,
+      daily: dailyRows,
+      guestVsAuth: { guest: guestCount, authenticated: authCount },
+      hourly: hourlyDist,
+      commentStats: {
+        count: commentLengths.length,
+        avgLength: avgCommentLen,
+        maxLength: commentLengths.length ? Math.max(...commentLengths) : 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /api/admin/qr/:feedbackId
  * Generate a QR code (PNG) for a given feedback entry.
  * The QR encodes a deep link to the feedback form pre-filled with that entry's rating.

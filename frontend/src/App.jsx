@@ -5,6 +5,7 @@ import GuestFeedbackForm from './components/GuestFeedbackForm';
 import { useAuth } from './components/auth/AuthProvider';
 import { supabase } from './lib/supabase';
 import AdminDashboard from './pages/AdminDashboard';
+import AnalyticsDashboard from './pages/AnalyticsDashboard';
 
 export default function App() {
   const { user, session, loading, signOut } = useAuth();
@@ -75,6 +76,11 @@ export default function App() {
   // Admin route
   if (window.location.pathname === '/admin') {
     return <AdminDashboard />;
+  }
+
+  // Analytics route
+  if (window.location.pathname === '/analytics') {
+    return <AnalyticsDashboard />;
   }
 
   return (

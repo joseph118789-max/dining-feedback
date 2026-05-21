@@ -38,12 +38,12 @@ app.use(session({
 }));
 
 // Auth routes
-app.use('/api/auth', authRoutes);              // Legacy (Google-only passport)
-app.use('/api/auth/supabase', authSupabaseRoutes); // New multi-provider Supabase
+app.use('/auth', authRoutes);              // Legacy (Google-only passport)
+app.use('/auth/supabase', authSupabaseRoutes); // New multi-provider Supabase
 
 // API routes
-app.use('/api/feedback', feedbackRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/feedback', feedbackRoutes);
+app.use('/admin', adminRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
