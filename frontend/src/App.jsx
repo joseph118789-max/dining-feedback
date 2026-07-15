@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import './lib/i18n';
 import { useTranslation } from 'react-i18next';
 import SocialLogin from './components/auth/SocialLogin';
+import SignUpForm from './components/auth/SignUpForm';
 import FeedbackForm from './components/FeedbackForm';
 import GuestFeedbackForm from './components/GuestFeedbackForm';
 import { useAuth } from './components/auth/AuthProvider';
@@ -14,15 +15,16 @@ export default function App() {
   const { user, session, loading, signOut } = useAuth();
   const [authMessage, setAuthMessage] = useState(null);
   const [guestMode, setGuestMode] = useState(false);
+  // authMode: 'signin' | 'signup' | 'guest'
+  const [authMode, setAuthMode] = useState('signin');
 
-  // Language switcher
   const languages = [
     { code: 'en', label: 'EN' },
     { code: 'zh', label: '中文' },
     { code: 'my', label: 'MY' },
   ];
 
-  // Handle OAuth callback redirect (when redirected back with tokens in URL)
+  // Handle OAuth callback redirect
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const accessToken = params.get('access_token');
@@ -104,7 +106,7 @@ export default function App() {
               style={{
                 padding: '4px 10px',
                 borderRadius: '6px',
-                border: '1px solid',
+                border: '1.5px solid',
                 borderColor: i18n.language === code ? '#2563eb' : '#d1d5db',
                 background: i18n.language === code ? '#2563eb' : 'white',
                 color: i18n.language === code ? 'white' : '#6b7280',
@@ -139,7 +141,7 @@ export default function App() {
           <p className="text-dining-600 mt-2 text-sm">{t('subtitle')}</p>
         </div>
 
-        {/* Auth message (from OAuth callback) */}
+        {/* Auth message */}
         {authMessage && (
           <div className={`mb-4 p-3 rounded-xl text-sm ${authMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {authMessage.text}
@@ -147,9 +149,11 @@ export default function App() {
         )}
 
         {!userInfo ? (
-          /* Sign In Card */
+          /* Sign In / Sign Up / Guest Card */
           <div className="bg-white rounded-3xl shadow-xl p-8 border border-dining-100">
-            {guestMode ? (
+
+            {/* Tab switcher */}
+            {authMode === 'guest' ? (
               <>
                 <div className="text-center mb-6">
                   <h2 className="text-xl font-semibold text-dining-900">{t('guestMode')}</h2>
@@ -158,11 +162,23 @@ export default function App() {
                 <GuestFeedbackForm />
                 <button
                   type="button"
-                  onClick={() => setGuestMode(false)}
+                  onClick={() => { setGuestMode(false); setAuthMode('signin'); }}
                   className="w-full mt-3 text-center text-xs text-dining-400 hover:text-dining-600 transition-colors"
                 >
                   {t('backToSignIn')}
                 </button>
+              </>
+            ) : authMode === 'signup' ? (
+              <>
+                <div className="text-center mb-6">
+                  <h2 className="text-xl font-semibold text-dining-900">{t('createAccount')}</h2>
+                  <p className="text-dining-500 mt-1 text-sm">{t('signUpSubtitle')}</p>
+                </div>
+                <SignUpForm
+                  onSuccess={() => {}}
+                  onError={(err) => setAuthMessage({ type: 'error', text: err })}
+                  onSwitchToSignIn={() => setAuthMode('signin')}
+                />
               </>
             ) : (
               <>
@@ -176,16 +192,44 @@ export default function App() {
                   onError={(err) => setAuthMessage({ type: 'error', text: err })}
                 />
 
+                <div className="relative my-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-dining-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="bg-white px-3 text-dining-400">{t('or')}</span>
+                  </div>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => setGuestMode(true)}
+                  onClick={() => setAuthMode('signup')}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: '#fff',
+                    color: '#2563eb',
+                    border: '1.5px solid #2563eb',
+                    borderRadius: '12px',
+                    fontWeight: '600',
+                    fontSize: '15px',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s',
+                  }}
+                >
+                  {t('signUpCta')}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAuthMode('guest')}
                   className="w-full mt-3 text-center text-xs text-dining-400 hover:text-dining-600 transition-colors"
                 >
                   {t('orGuest')}
                 </button>
 
                 <p className="text-center text-dining-400 text-xs mt-4">
-                  We support Google, Apple, and Facebook sign-in
+                  {t('supportedAccounts')}
                 </p>
               </>
             )}
