@@ -14,10 +14,17 @@ function parseJWT(token) {
   }
 }
 
+function isTokenExpired(expiresAt) {
+  if (!expiresAt) return true;
+  // expires_at is in seconds since epoch
+  return Math.floor(Date.now() / 1000) >= expiresAt - 30; // 30s skew
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const initDone = useRef(false);
 
   useEffect(() => {
@@ -71,6 +78,48 @@ export function AuthProvider({ children }) {
         }
 
         if (sess) {
+          // Check if access_token is expired AND we have a refresh_token
+          if (isTokenExpired(sess.expires_at) && sess.refresh_token) {
+            console.log('[Auth] Access token expired, refreshing...');
+            try {
+              const refreshRes = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL || ''}/auth/v1/token?grant_type=refresh_token`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+                  },
+                  body: JSON.stringify({ refresh_token: sess.refresh_token }),
+                }
+              );
+              if (refreshRes.ok) {
+                const refreshed = await refreshRes.json();
+                sess.access_token = refreshed.access_token;
+                sess.refresh_token = refreshed.refresh_token;
+                sess.expires_at = refreshed.expires_at;
+                // Update localStorage with new tokens
+                const newStored = {
+                  ...JSON.parse(localStorage.getItem('dining-feedback-auth') || '{}'),
+                  currentSession: sess,
+                };
+                localStorage.setItem('dining-feedback-auth', JSON.stringify(newStored));
+                localStorage.setItem('sb-access-token', refreshed.access_token);
+                if (refreshed.refresh_token) localStorage.setItem('sb-refresh-token', refreshed.refresh_token);
+                if (refreshed.expires_at) localStorage.setItem('sb-time', String(refreshed.expires_at));
+                console.log('[Auth] Token refreshed successfully');
+              } else {
+                console.warn('[Auth] Refresh failed:', refreshRes.status);
+                setSessionExpired(true);
+              }
+            } catch (err) {
+              console.error('[Auth] Refresh error:', err);
+              setSessionExpired(true);
+            }
+          } else if (isTokenExpired(sess.expires_at)) {
+            setSessionExpired(true);
+          }
+
           // Update Supabase SDK's internal state
           const { data, error } = await supabase.auth.setSession({
             access_token: sess.access_token,
@@ -96,6 +145,14 @@ export function AuthProvider({ children }) {
       if (event === 'SIGNED_IN' && newSession) {
         setSession(newSession);
         setUser(newSession.user);
+        setSessionExpired(false);
+      } else if (event === 'TOKEN_REFRESHED' && newSession) {
+        setSession(newSession);
+        setUser(newSession.user);
+        // Persist refreshed tokens
+        localStorage.setItem('sb-access-token', newSession.access_token);
+        if (newSession.refresh_token) localStorage.setItem('sb-refresh-token', newSession.refresh_token);
+        if (newSession.expires_at) localStorage.setItem('sb-time', String(newSession.expires_at));
       } else if (event === 'SIGNED_OUT') {
         setSession(null);
         setUser(null);
@@ -116,7 +173,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, signOut, sessionExpired }}>
       {children}
     </AuthContext.Provider>
   );

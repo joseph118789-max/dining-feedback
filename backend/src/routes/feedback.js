@@ -59,7 +59,8 @@ router.post('/',
       .isInt({ min: 1, max: 5 })
       .withMessage('Rating must be between 1 and 5'),
     body('phoneNumber')
-      .optional()
+      .notEmpty()
+      .withMessage('Phone number is required')
       .isMobilePhone()
       .withMessage('Invalid phone number format'),
     body('comments')

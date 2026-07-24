@@ -7,10 +7,10 @@ const feedbackSchema = z.object({
   rating: z.number().min(1, 'Please select a rating').max(5),
   phone: z
     .string()
-    .optional()
-    .refine(
-      (val) => !val || /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/.test(val),
-      { message: 'Enter a valid phone number' }
+    .min(1, 'Phone number is required')
+    .regex(
+      /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/,
+      'Enter a valid phone number'
     ),
   feedback: z
     .string()
@@ -134,10 +134,13 @@ export default function FeedbackForm({ email }) {
       noValidate
       className="bg-white rounded-3xl shadow-xl p-6 border border-dining-100 space-y-6"
     >
-      {/* Locked email */}
+      {/* Locked email (optional - pre-filled but shown as info) */}
       <div>
         <label className="block text-xs font-semibold text-dining-400 uppercase tracking-wide mb-1">
-          Email
+          Email{' '}
+          <span className="text-dining-300 font-normal normal-case tracking-normal">
+            (optional)
+          </span>
         </label>
         <div className="flex items-center gap-2 bg-dining-50 border border-dining-200 rounded-xl px-4 py-3">
           <svg
@@ -153,32 +156,19 @@ export default function FeedbackForm({ email }) {
               d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
             />
           </svg>
-          <span className="text-sm text-dining-700 truncate">{email}</span>
-          <svg
-            className="w-4 h-4 text-dining-400 ml-auto shrink-0"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-            />
-          </svg>
+          <span className="text-sm text-dining-700 truncate">{email || '—'}</span>
         </div>
       </div>
 
-      {/* Phone (optional) */}
+      {/* Phone (required) */}
       <div>
         <label
           htmlFor="phone"
           className="block text-xs font-semibold text-dining-400 uppercase tracking-wide mb-1"
         >
           Phone{' '}
-          <span className="text-dining-300 font-normal normal-case tracking-normal">
-            (optional)
+          <span className="text-red-500 font-normal normal-case tracking-normal">
+            (required)
           </span>
         </label>
         <div className="relative">

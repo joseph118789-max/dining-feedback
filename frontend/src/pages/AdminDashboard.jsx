@@ -3,7 +3,7 @@ import { useAuth } from '../components/auth/AuthProvider';
 import { supabase } from '../lib/supabase';
 
 export default function AdminDashboard() {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading, signOut, sessionExpired } = useAuth();
   const [feedbacks, setFeedbacks] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -58,7 +58,34 @@ export default function AdminDashboard() {
   }
 
   if (authLoading) return <div className="p-8 text-center">Loading...</div>;
-  if (!user) return <div className="p-8 text-center">Please sign in to view admin dashboard.</div>;
+  if (!user) return (
+    <div className="min-h-screen flex items-center justify-center bg-dining-50">
+      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center border border-dining-100">
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-full mb-4">
+          <svg className="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-dining-900 mb-2">
+          {sessionExpired ? 'Session Expired' : 'Sign In Required'}
+        </h2>
+        <p className="text-dining-500 text-sm mb-6">
+          {sessionExpired
+            ? 'Your session has expired. Please sign in again to continue.'
+            : 'Please sign in to view the admin dashboard.'}
+        </p>
+        <button
+          onClick={() => { window.location.href = '/?signin=true'; }}
+          className="w-full bg-dining-500 hover:bg-dining-600 text-white font-semibold py-3 px-4 rounded-xl transition-colors"
+        >
+          Sign In with Google
+        </button>
+        <a href="/" className="block mt-3 text-sm text-dining-400 hover:text-dining-600">
+          ← Back to Feedback Form
+        </a>
+      </div>
+    </div>
+  );
   if (loading) return <div className="p-8 text-center">Loading feedback data...</div>;
   if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
 

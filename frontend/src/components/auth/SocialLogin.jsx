@@ -1,3 +1,4 @@
+// Cache bust v2: 2026-07-23 16:40
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
@@ -35,7 +36,8 @@ export default function SocialLogin({ onSuccess, onError }) {
   const handleLogin = async (providerId) => {
     setLoading(providerId);
     try {
-      const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3010';
+      const backendUrl = import.meta.env.VITE_API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+      // v3 cache-bust marker 2026-07-23T16:42:00Z
       // callbackUrl goes to our domain's OAuth callback endpoint
       const callbackUrl = `${window.location.origin}/api/auth/supabase/callback`;
       // Build login URL - use /api/auth/supabase/login/ (backend mounts at /api/auth/supabase/)

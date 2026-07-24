@@ -3,7 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
 import dotenv from 'dotenv';
+import passport from 'passport';
 
+import './services/passport.js'; // Registers Google OAuth strategy on import
 import authRoutes from './routes/auth.js';       // Legacy passport routes (keep for now)
 import authSupabaseRoutes from './routes/auth-supabase.js'; // New Supabase routes
 import feedbackRoutes from './routes/feedback.js';
@@ -36,6 +38,10 @@ app.use(session({
     maxAge: 24 * 60 * 60 * 1000,
   },
 }));
+
+// Passport initialization (Google OAuth strategy registers on import above)
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Auth routes
 app.use('/auth', authRoutes);              // Legacy (Google-only passport)
