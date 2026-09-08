@@ -35,13 +35,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_SUPABASE_URL: https://feedback.seekn.site
-        VITE_API_BASE_URL: https://feedback.seekn.site
+        VITE_SUPABASE_URL: https://feedback.chefv.com.my
+        VITE_API_BASE_URL: https://feedback.chefv.com.my
         VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
     container_name: dining-frontend
     environment:
-      VITE_API_BASE_URL: https://feedback.seekn.site
-      VITE_SUPABASE_URL: https://feedback.seekn.site
+      VITE_API_BASE_URL: https://feedback.chefv.com.my
+      VITE_SUPABASE_URL: https://feedback.chefv.com.my
       VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       NODE_ENV: production
     ports:

@@ -3,6 +3,16 @@ import { z } from 'zod';
 import StarRating from './StarRating';
 import { supabase } from '../lib/supabase';
 
+const BRANCHES = [
+  'Seri Kembangan',
+  'P.P. Seri Kembangan',
+  'Bandar Puteri Puchong',
+  'Sungai Way Petaling Jaya',
+  'Bandar Menjalara',
+  'SS15 Subang Jaya',
+  'Bukit Tinggi 2',
+];
+
 const feedbackSchema = z.object({
   rating: z.number().min(1, 'Please select a rating').max(5),
   phone: z
@@ -12,6 +22,7 @@ const feedbackSchema = z.object({
       /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/,
       'Enter a valid phone number'
     ),
+  branch: z.string().min(1, 'Please select a branch'),
   feedback: z
     .string()
     .min(10, 'Please share at least 10 characters')
@@ -21,6 +32,7 @@ const feedbackSchema = z.object({
 export default function FeedbackForm({ email }) {
   const [rating, setRating] = useState(0);
   const [phone, setPhone] = useState('');
+  const [branch, setBranch] = useState('');
   const [feedbackText, setFeedbackText] = useState('');
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -28,7 +40,7 @@ export default function FeedbackForm({ email }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validate = () => {
-    const result = feedbackSchema.safeParse({ rating, phone, feedback: feedbackText });
+    const result = feedbackSchema.safeParse({ rating, phone, branch, feedback: feedbackText });
     if (!result.success) {
       const fieldErrors = {};
       result.error.errors.forEach((err) => {
@@ -76,6 +88,7 @@ export default function FeedbackForm({ email }) {
         body: JSON.stringify({
           rating,
           phoneNumber: phone || undefined,
+          branch,
           comments: feedbackText,
         }),
       });
@@ -158,6 +171,71 @@ export default function FeedbackForm({ email }) {
           </svg>
           <span className="text-sm text-dining-700 truncate">{email || '—'}</span>
         </div>
+      </div>
+
+      {/* Branch (required) */}
+      <div>
+        <label
+          htmlFor="branch"
+          className="block text-xs font-semibold text-dining-400 uppercase tracking-wide mb-1"
+        >
+          Branch{' '}
+          <span className="text-red-500 font-normal normal-case tracking-normal">
+            (required)
+          </span>
+        </label>
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg
+              className="w-4 h-4 text-dining-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+          </div>
+          <select
+            id="branch"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            onBlur={() => handleBlur('branch')}
+            className={`w-full pl-10 pr-4 py-3 text-sm bg-dining-50 border rounded-xl text-dining-900 appearance-none transition-colors focus:outline-none focus:ring-2 focus:ring-dining-400 focus:border-transparent ${
+              touched.branch && errors.branch
+                ? 'border-red-400 bg-red-50'
+                : 'border-dining-200'
+            }`}
+          >
+            <option value="">Select a branch</option>
+            {BRANCHES.map((b) => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+          <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+            <svg className="w-4 h-4 text-dining-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+        {touched.branch && errors.branch && (
+          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            {errors.branch}
+          </p>
+        )}
       </div>
 
       {/* Phone (required) */}

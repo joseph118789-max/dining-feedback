@@ -57,6 +57,7 @@ const requireAdmin = async (req, res, next) => {
  * - page: number (default: 1)
  * - limit: number (default: 20, max: 100)
  * - rating: number (filter by rating)
+ * - branch: string (filter by branch)
  * - sortBy: 'createdAt' | 'rating' (default: 'createdAt')
  * - sortOrder: 'asc' | 'desc' (default: 'desc')
  */
@@ -66,10 +67,13 @@ router.get('/reviews', requireAdmin, async (req, res, next) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const skip = (page - 1) * limit;
     const rating = req.query.rating ? parseInt(req.query.rating, 10) : undefined;
+    const branch = req.query.branch || undefined;
     const sortBy = req.query.sortBy === 'rating' ? 'rating' : 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc';
 
-    const where = rating ? { rating } : {};
+    const where = {};
+    if (rating) where.rating = rating;
+    if (branch) where.branch = branch;
 
     const [feedbacks, total, stats] = await Promise.all([
       prisma.feedback.findMany({

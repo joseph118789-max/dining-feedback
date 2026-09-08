@@ -14,6 +14,7 @@ model Feedback {
   id            String   @id @default(uuid())
   customerEmail String   @map("customer_email") @db.VarChar(255)
   phoneNumber   String?  @map("phone_number") @db.VarChar(20)
+  branch        String   @default("Unknown") @map("branch") @db.VarChar(100)
   rating        Int
   comments      String?  @db.Text
   createdAt     DateTime @default(now()) @map("created_at")
@@ -22,6 +23,7 @@ model Feedback {
   @@map("feedbacks")
   @@index([customerEmail])
   @@index([rating])
+  @@index([branch])
   @@index([createdAt(sort: Desc)])
 }
 

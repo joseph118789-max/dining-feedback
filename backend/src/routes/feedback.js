@@ -38,12 +38,23 @@ const verifyAuth = async (req, res, next) => {
   }
 };
 
+const BRANCHES = [
+  'Seri Kembangan',
+  'P.P. Seri Kembangan',
+  'Bandar Puteri Puchong',
+  'Sungai Way Petaling Jaya',
+  'Bandar Menjalara',
+  'SS15 Subang Jaya',
+  'Bukit Tinggi 2',
+];
+
 /**
  * POST /api/feedback
  * Submit dining feedback (requires Supabase SSO authentication)
  *
  * Request body:
  * - phoneNumber (optional): string
+ * - branch: string (required, must be one of BRANCHES)
  * - rating: number (1-5)
  * - comments (optional): string
  *
@@ -63,6 +74,11 @@ router.post('/',
       .withMessage('Phone number is required')
       .isMobilePhone()
       .withMessage('Invalid phone number format'),
+    body('branch')
+      .notEmpty()
+      .withMessage('Branch is required')
+      .isIn(BRANCHES)
+      .withMessage('Invalid branch selected'),
     body('comments')
       .optional()
       .isString()
@@ -76,13 +92,14 @@ router.post('/',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { phoneNumber, rating, comments } = req.body;
+      const { phoneNumber, rating, comments, branch } = req.body;
       const customerEmail = req.user.email;
 
       const feedback = await prisma.feedback.create({
         data: {
           customerEmail,
           phoneNumber: phoneNumber || null,
+          branch,
           rating: parseInt(rating, 10),
           comments: comments || null,
         },
@@ -105,6 +122,7 @@ router.post('/',
  *
  * Request body:
  * - phoneNumber: string (required)
+ * - branch: string (required, must be one of BRANCHES)
  * - rating: number (1-5) (required)
  * - comments (optional): string
  */
@@ -116,6 +134,11 @@ router.post('/guest',
     body('rating')
       .isInt({ min: 1, max: 5 })
       .withMessage('Rating must be between 1 and 5'),
+    body('branch')
+      .notEmpty()
+      .withMessage('Branch is required')
+      .isIn(BRANCHES)
+      .withMessage('Invalid branch selected'),
     body('comments')
       .optional()
       .isString()
@@ -129,12 +152,13 @@ router.post('/guest',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { phoneNumber, rating, comments } = req.body;
+      const { phoneNumber, rating, comments, branch } = req.body;
 
       const feedback = await prisma.feedback.create({
         data: {
           customerEmail: `guest:${phoneNumber}`, // prefix to identify guest entries
           phoneNumber,
+          branch,
           rating: parseInt(rating, 10),
           comments: comments || null,
         },
@@ -149,5 +173,7 @@ router.post('/guest',
     }
   }
 );
+
+export { BRANCHES };
 
 export default router;
