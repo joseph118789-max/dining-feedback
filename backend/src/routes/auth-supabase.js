@@ -5,15 +5,9 @@ const router = express.Router();
 
 const GOTRUE_JWT_SECRET = process.env.GOTRUE_JWT_SECRET || process.env.SUPABASE_JWT_SECRET || 'igSL/sJ7/10rTnnDULBq8hWxZxzsHWoblalZKdwQvcQ=';
 
-function signJWT(payload, secret) {
-  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const sig = crypto.createHmac('sha256', secret).update(header + '.' + payloadB64).digest('base64url');
-  return header + '.' + payloadB64 + '.' + sig;
-}
-
 function generateCodeVerifier() {
-  return crypto.randomBytes(32).toString('base64url');
+  // RFC 7636: verifier is 43-128 chars from [A-Z a-z 0-9 - . _ ~]
+  return crypto.randomBytes(48).toString('base64url');
 }
 
 function generateCodeChallenge(verifier) {
@@ -21,52 +15,68 @@ function generateCodeChallenge(verifier) {
 }
 
 // GET /api/auth/supabase/login/:provider
+// Returns ONLY the PKCE code_challenge. The frontend then navigates the BROWSER
+// directly to Gotrue's /authorize endpoint. This is critical: Gotrue v2 sets
+// its OAuth state cookie during the browser round-trip to /authorize. Hitting
+// /authorize from a server-side fetch bypasses that cookie flow, and the
+// callback then fails with "OAuth state parameter is invalid".
+//
+// Flow:
+//   1. Frontend calls GET /api/auth/supabase/login/google -> { code_challenge }
+//   2. Frontend stores code_challenge in sessionStorage
+//   3. Frontend navigates browser to:
+//        ${SUPABASE_URL}/auth/v1/authorize?provider=google
+//                              &code_challenge=${code_challenge}
+//                              &code_challenge_method=S256
+//                              &redirect_to=${BACKEND_URL}/api/auth/supabase/callback
+//                              &scopes=email+profile (optional)
+//   4. Gotrue sets gotrue-state cookie, 302 to Google
+//   5. Google -> Gotrue /auth/v1/callback (validates cookie state -> ok)
+//   6. Gotrue -> our /api/auth/supabase/callback#access_token=...&refresh_token=...
+//   7. Our callback HTML stores the session and redirects to frontend
 router.get('/login/:provider', async (req, res) => {
   const { provider } = req.params;
-  const SUPABASE_URL = process.env.SUPABASE_URL || 'https://feedback.seekn.site';
-  const BACKEND_URL = process.env.BACKEND_URL || 'https://feedback.seekn.site';
+  const SUPABASE_URL = process.env.SUPABASE_URL || 'https://feedback.chefv.com.my';
+  const BACKEND_URL = process.env.BACKEND_URL || 'https://feedback.chefv.com.my';
 
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
-  const oauthState = crypto.randomBytes(16).toString('hex');
-  const now = Math.floor(Date.now() / 1000);
 
-  const statePayload = {
+  // 5-minute cookie holding the code_verifier. The /callback handler reads
+  // it and exchanges the auth code for tokens via Gotrue's /token endpoint.
+  res.cookie('pkce_verifier', codeVerifier, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    maxAge: 5 * 60 * 1000,
+    path: '/',
+    domain: '.feedback.chefv.com.my',
+  });
+
+  res.json({
     provider,
-    oauth_state: oauthState,
-    code_verifier: codeVerifier,
-    nbf: now,
-    exp: now + 600,
-  };
-  const stateJWT = signJWT(statePayload, GOTRUE_JWT_SECRET);
-
-  const redirectTo = `${BACKEND_URL}/api/auth/supabase/callback`;
-
-  const authUrl = `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}&redirect_to=${encodeURIComponent(redirectTo)}&code_challenge=${codeChallenge}&code_challenge_method=S256&state=${stateJWT}`;
-
-  console.log('[Auth] PKCE verifier:', codeVerifier);
-  console.log('[Auth] State JWT:', stateJWT);
-
-  res.json({ url: authUrl });
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+    authorize_url: `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_to=${encodeURIComponent(BACKEND_URL + '/api/auth/supabase/callback')}`,
+  });
 });
 
 // GET /api/auth/supabase/callback
-// GoTrue redirects here with JWT in URL FRAGMENT (#access_token=...).
-// We use an IMMEDIATE inline script (no async/defer) that runs BEFORE React loads.
-// This stores the token synchronously so React sees it on mount.
+// Gotrue redirects here after Google auth completes. Tokens arrive in the URL
+// FRAGMENT (#access_token=...) because we asked for response_type=token via
+// the implicit flow. We run a synchronous inline script that stores the
+// session in localStorage before the React app mounts.
 router.get('/callback', (req, res) => {
-  const FRONTEND_URL = process.env.FRONTEND_URL || 'https://feedback.seekn.site';
+  const FRONTEND_URL = process.env.FRONTEND_URL || 'https://feedback.chefv.com.my';
 
+  // If Gotrue returned an error (?error=...), surface it
   const error = req.query.error;
   const errorDescription = req.query.error_description;
   if (error) {
-    console.error('[Auth] GoTrue OAuth error:', error, errorDescription);
+    console.error('[Auth] Gotrue OAuth error:', error, errorDescription);
     return res.redirect(`${FRONTEND_URL}/?auth_error=${encodeURIComponent(errorDescription || error)}`);
   }
 
-  // Return HTML that runs a blocking script FIRST to store token,
-  // THEN loads React. This ensures the token is in localStorage
-  // before the React app mounts and calls getSession().
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -92,12 +102,10 @@ router.get('/callback', (req, res) => {
         var expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
 
         if (!accessToken) {
-          // No token - redirect immediately to error
           window.location.href = '${FRONTEND_URL}/?auth_error=No+token+received';
           return;
         }
 
-        // Decode JWT payload to get user info
         try {
           var payloadB64 = accessToken.split('.')[1];
           var b64 = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
@@ -124,22 +132,15 @@ router.get('/callback', (req, res) => {
             }
           };
 
-          // Store in localStorage using SDK keys
           localStorage.setItem('sb-access-token', accessToken);
           localStorage.setItem('sb-refresh-token', refreshToken);
           localStorage.setItem('sb-time', String(Math.floor(Date.now() / 1000)));
-          // Also store our custom format
-          localStorage.setItem('dining-feedback-auth', JSON.stringify({
-            currentSession: session,
-            hasStorage: true
-          }));
+          localStorage.setItem('dining-feedback-auth', JSON.stringify({ currentSession: session, hasStorage: true }));
 
-          // Dispatch event for any listeners
           window.dispatchEvent(new CustomEvent('sb-global-auth-event', {
             detail: { event: 'SIGNED_IN', session: session }
           }));
 
-          // Redirect to frontend
           window.location.href = '${FRONTEND_URL}/?auth=success';
         } catch (e) {
           console.error('JWT parse error:', e);
