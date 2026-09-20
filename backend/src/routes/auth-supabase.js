@@ -57,7 +57,10 @@ router.get('/login/:provider', async (req, res) => {
     provider,
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
-    authorize_url: `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_to=${encodeURIComponent(BACKEND_URL + '/api/auth/supabase/callback')}`,
+    // Frontend SocialLogin.jsx reads `const { url } = await res.json()` and navigates
+    // browser to it. Field MUST be named `url` (not `authorize_url`) — mismatch causes
+    // window.location.href = undefined → browser navigates to /undefined. (Liang 18 Sep 2026)
+    url: `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_to=${encodeURIComponent(BACKEND_URL + '/api/auth/supabase/callback')}`,
   });
 });
 
@@ -66,8 +69,10 @@ router.get('/login/:provider', async (req, res) => {
 // FRAGMENT (#access_token=...) because we asked for response_type=token via
 // the implicit flow. We run a synchronous inline script that stores the
 // session in localStorage before the React app mounts.
-router.get('/callback', (req, res) => {
+router.get('/callback', async (req, res) => {
   const FRONTEND_URL = process.env.FRONTEND_URL || 'https://feedback.chefv.com.my';
+  const SUPABASE_URL = process.env.SUPABASE_URL || 'https://feedback.chefv.com.my';
+  const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
   // If Gotrue returned an error (?error=...), surface it
   const error = req.query.error;
@@ -77,79 +82,112 @@ router.get('/callback', (req, res) => {
     return res.redirect(`${FRONTEND_URL}/?auth_error=${encodeURIComponent(errorDescription || error)}`);
   }
 
+  // PKCE flow: the login endpoint included code_challenge + code_challenge_method=S256
+  // in the authorize URL, so Gotrue redirects back with ?code=... in query params
+  // (NOT #access_token=... in fragment). We must exchange the code for tokens
+  // server-side using the pkce_verifier cookie that the login endpoint set.
+  // (Liang 19 Sep 2026)
+  const code = req.query.code;
+  if (!code) {
+    return res.redirect(`${FRONTEND_URL}/?auth_error=No+code+received`);
+  }
+
+  // Parse pkce_verifier cookie manually (cookie-parser not installed in this image).
+  // Cookie was set by /auth/supabase/login/:provider with:
+  //   domain: '.feedback.chefv.com.my', path: '/', httpOnly, secure, sameSite=lax, maxAge 5min
+  const cookieHeader = req.headers.cookie || '';
+  const verifierMatch = cookieHeader.match(/(?:^|;\s*)pkce_verifier=([^;]+)/);
+  const codeVerifier = verifierMatch ? decodeURIComponent(verifierMatch[1]) : null;
+  if (!codeVerifier) {
+    console.error('[Auth] pkce_verifier cookie missing on callback');
+    return res.redirect(`${FRONTEND_URL}/?auth_error=No+code_verifier+cookie`);
+  }
+
+  // Exchange code for tokens via Gotrue's PKCE token endpoint.
+  // After 3 failed server-side attempts (JSON body, form body, query string,
+  // https module with explicit Content-Length — all blocked because the
+  // POST body gets dropped somewhere in the chain
+  //   backend → Cloudflare → cloudflared → nginx → supabase-auth),
+  // doing the exchange from the BROWSER instead. The browser is on the
+  // same origin as Gotrue's /auth/v1/token endpoint, so no body-forwarding
+  // proxy is involved. (Liang 19 Sep 2026)
+  //
+  // We embed the code + code_verifier + SUPABASE_URL + SUPABASE_ANON_KEY
+  // as JSON into the HTML for the inline script to consume.
+
+  // CSP nonce for inline script (override helmet's default)
+  const nonce = crypto.randomBytes(16).toString('base64');
+  res.removeHeader('Content-Security-Policy');
+  res.setHeader(
+    'Content-Security-Policy',
+    `default-src 'self'; ` +
+    `script-src 'self' 'nonce-${nonce}' https://static.cloudflareinsights.com; ` +
+    `style-src 'self' 'unsafe-inline'; ` +
+    `img-src 'self' data:; ` +
+    `connect-src 'self' https://*.supabase.co https://feedback.chefv.com.my https://static.cloudflareinsights.com; ` +
+    `frame-ancestors 'self'; ` +
+    `base-uri 'self'; ` +
+    `form-action 'self'`
+  );
+
+  // Escape `<` so JSON can't break out of the <script> tag.
+  const exchangeJson = JSON.stringify({
+    code,
+    code_verifier: codeVerifier,
+    supabase_url: SUPABASE_URL,
+    apikey: SUPABASE_ANON_KEY || '',
+    frontend_url: FRONTEND_URL,
+  }).replace(/</g, '\\u003c');
+
   const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>Signing in...</title>
-  <script>
+  <script nonce="${nonce}">
     (function() {
-      try {
-        var hash = window.location.hash.substring(1);
-        var params = {};
-        if (hash) {
-          hash.split('&').forEach(function(part) {
-            var kv = part.split('=');
-            if (kv[0]) {
-              params[decodeURIComponent(kv[0])] = kv.length > 1 ? decodeURIComponent(kv[1]) : '';
-            }
-          });
-        }
+      var EX = ${exchangeJson};
 
-        var accessToken = params['access_token'];
-        var expiresIn = parseInt(params['expires_in'] || '3600', 10);
-        var refreshToken = params['refresh_token'] || '';
-        var expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
-
-        if (!accessToken) {
-          window.location.href = '${FRONTEND_URL}/?auth_error=No+token+received';
-          return;
-        }
-
-        try {
-          var payloadB64 = accessToken.split('.')[1];
-          var b64 = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
-          while (b64.length % 4) b64 += '=';
-          var user = JSON.parse(atob(b64));
-
-          var session = {
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            expires_in: expiresIn,
-            expires_at: expiresAt,
-            token_type: 'Bearer',
-            user: {
-              id: user.sub,
-              email: user.email,
-              aud: user.aud,
-              role: user.role || 'authenticated',
-              email_verified: user.user_metadata && user.user_metadata.email_verified || false,
-              phone: user.phone || '',
-              app_metadata: user.app_metadata || {},
-              user_metadata: user.user_metadata || {},
-              created_at: user.created_at || new Date().toISOString(),
-              updated_at: user.updated_at || new Date().toISOString(),
-            }
-          };
-
-          localStorage.setItem('sb-access-token', accessToken);
-          localStorage.setItem('sb-refresh-token', refreshToken);
-          localStorage.setItem('sb-time', String(Math.floor(Date.now() / 1000)));
-          localStorage.setItem('dining-feedback-auth', JSON.stringify({ currentSession: session, hasStorage: true }));
-
-          window.dispatchEvent(new CustomEvent('sb-global-auth-event', {
-            detail: { event: 'SIGNED_IN', session: session }
-          }));
-
-          window.location.href = '${FRONTEND_URL}/?auth=success';
-        } catch (e) {
-          console.error('JWT parse error:', e);
-          window.location.href = '${FRONTEND_URL}/?auth_error=JWT+parse+failed';
-        }
-      } catch (err) {
-        console.error('Callback error:', err);
-        window.location.href = '${FRONTEND_URL}/?auth_error=' + encodeURIComponent(err.message);
+      function fail(msg) {
+        window.location.href = EX.frontend_url + '/?auth_error=' + encodeURIComponent(msg);
       }
+
+      fetch(EX.supabase_url + '/auth/v1/token?grant_type=pkce', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': EX.apikey,
+        },
+        // PKCE: GoTrue v2.196 expects auth_code not code (20 Sep 2026). Verified via
+        // curl: {code, code_verifier} -> 400; {auth_code, code_verifier} -> 404.
+        // NOTE: this comment is inside a backtick template literal - do NOT use
+        // backticks, em-dash, or unicode arrows in any comment in this file block,
+        // they terminate the template and Node throws SyntaxError.
+        body: JSON.stringify({ auth_code: EX.code, code_verifier: EX.code_verifier }),
+      })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok || !res.j.access_token) {
+          return fail(res.j.error_description || res.j.msg || res.j.error || 'Token exchange failed');
+        }
+        var session = res.j;
+        var expiresAt = Math.floor(Date.now() / 1000) + (session.expires_in || 3600);
+        localStorage.setItem('sb-access-token', session.access_token);
+        localStorage.setItem('sb-refresh-token', session.refresh_token);
+        localStorage.setItem('sb-time', String(expiresAt));
+        localStorage.setItem('dining-feedback-auth', JSON.stringify({
+          currentSession: Object.assign({}, session, { expires_at: expiresAt }),
+          hasStorage: true,
+        }));
+        window.dispatchEvent(new CustomEvent('sb-global-auth-event', {
+          detail: { event: 'SIGNED_IN', session: session }
+        }));
+        window.location.href = EX.frontend_url + '/?auth=success';
+      })
+      .catch(function(err) {
+        console.error('PKCE exchange error:', err);
+        fail(err && err.message ? err.message : 'Token exchange failed');
+      });
     })();
   </script>
 </head>
@@ -158,8 +196,12 @@ router.get('/callback', (req, res) => {
 </body>
 </html>`;
 
+  // Clear the single-use pkce_verifier cookie
+  res.setHeader('Set-Cookie', 'pkce_verifier=; Path=/; Domain=.feedback.chefv.com.my; Max-Age=0; HttpOnly; Secure; SameSite=Lax');
+
   res.setHeader('Content-Type', 'text/html');
-  res.send(html);
+  return res.send(html);
 });
+module.exports = router;
 
 module.exports = router;

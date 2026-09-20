@@ -15,6 +15,7 @@ router.get('/google', passport.authenticate('google', {
 router.get('/google/callback',
   passport.authenticate('google', { failureRedirect: '/api/auth/failed' }),
   async (req, res) => {
+    const FRONTEND_URL = process.env.FRONTEND_URL || 'https://feedback.chefv.com.my';
     try {
       // Store or update OAuth session in DB
       await prisma.oAuthSession.upsert({
@@ -41,10 +42,10 @@ router.get('/google/callback',
       });
 
       // Redirect to frontend with session info
-      res.redirect(`${process.env.FRONTEND_URL}/?auth=success&email=${encodeURIComponent(req.user.email)}`);
+      res.redirect(`${FRONTEND_URL}/?auth=success&email=${encodeURIComponent(req.user.email)}`);
     } catch (error) {
       console.error('OAuth callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL}/?auth=error`);
+      res.redirect(`${FRONTEND_URL}/?auth=error`);
     }
   }
 );

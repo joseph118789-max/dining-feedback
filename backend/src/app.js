@@ -45,7 +45,7 @@ app.use(passport.session());
 
 // Auth routes
 app.use('/auth', authRoutes);              // Legacy (Google-only passport)
-app.use('/auth/supabase', authSupabaseRoutes); // New multi-provider Supabase
+app.use('/auth/supabase', authSupabaseRoutes); // New multi-provider Supabase (nginx reverse proxy on the host strips /api/, so backend mounts at /auth/supabase)
 
 // API routes
 app.use('/feedback', feedbackRoutes);

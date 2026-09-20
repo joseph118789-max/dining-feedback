@@ -302,7 +302,7 @@ router.get('/qr/:feedbackId', requireAdmin, async (req, res, next) => {
     }
 
     const size = Math.min(600, Math.max(100, parseInt(req.query.size, 10) || 300));
-    const baseUrl = process.env.FRONTEND_URL || 'https://feedback.seekn.site';
+    const baseUrl = process.env.FRONTEND_URL || 'https://feedback.chefv.com.my';
     // Encode rating in URL so staff can show the rating value in the QR landing page
     const deepLink = `${baseUrl}/feedback/${feedback.id}?rating=${feedback.rating}`;
 
