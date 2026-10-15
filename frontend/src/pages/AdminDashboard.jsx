@@ -126,18 +126,20 @@ export default function AdminDashboard() {
               <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Date</th>
               <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Email</th>
               <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Phone</th>
+              <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Branch</th>
               <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Rating</th>
               <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Comments</th>
             </tr>
           </thead>
           <tbody>
             {feedbacks.length === 0 ? (
-              <tr><td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>No feedback yet</td></tr>
+              <tr><td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>No feedback yet</td></tr>
             ) : feedbacks.map((fb, i) => (
               <tr key={fb.id || i} style={{ borderBottom: i < feedbacks.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
                 <td style={{ padding: '12px' }}>{fb.createdAt ? new Date(fb.createdAt).toLocaleString() : '-'}</td>
                 <td style={{ padding: '12px' }}>{fb.customerEmail || '-'}</td>
                 <td style={{ padding: '12px' }}>{fb.phoneNumber || '-'}</td>
+                <td style={{ padding: '12px' }}>{fb.branch || '-'}</td>
                 <td style={{ padding: '12px' }}>{'⭐'.repeat(fb.rating || 0)}</td>
                 <td style={{ padding: '12px' }}>{fb.comments || '-'}</td>
               </tr>
